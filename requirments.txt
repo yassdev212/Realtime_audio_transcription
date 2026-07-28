@@ -1,0 +1,5 @@
+numpy
+faster-whisper
+PyAudioWPatch
+PyQt6
+pywin32
