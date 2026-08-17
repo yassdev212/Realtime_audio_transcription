@@ -32,6 +32,20 @@ Two-Layer VAD
 
 Replaced the RMS gate with two components that solve different halves of the problem: an energy gate with a max-wait flush controls when the bucket flushes (fixes the deadlock — silence can't trap the buffer), and Faster-Whisper's built-in Silero neural VAD trims residual noise/silence from what gets sent to the model. Energy gate alone: 29.27% WER. Both together: 26.83% WER, 0.32s inference, ~0.56s perceived lag (measured from end-of-speech, not from bucket-start).
 
+Interim Transcription (Live Drafts)
+
+To bridge the gap between the user's speaking speed and the VAD flush trigger, the pipeline was upgraded to support real-time interim transcription ("live typing").
+
+Instead of waiting for a pause, the background thread takes a snapshot of the actively growing audio bucket every ~190ms (18 chunks) and runs a fast inference pass.
+
+    State Management: These snapshots are emitted to the PyQt6 thread with an is_final=False flag. The UI updates the active line, but the SQLite database ignores it to prevent pollution.
+
+    The Commit: Once the VAD detects a pause, a final is_final=True pass is executed, locked into UI history, saved to the database, and the bucket is cleared.
+
+    UI Integration: The overlay manages the continuous stream of draft words using a rolling word-based FIFO buffer and simple prefix-matching deduplication to ensure seamless sentence hand-offs on a single line.
+
+
+    
 ### Benchmark Log
 
 | Date       | Model    | Compute | Beam  | Bucket                     |  WER   | Inference | Pipeline E2E | Perceived Lag | Notes                                    |

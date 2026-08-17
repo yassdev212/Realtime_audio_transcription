@@ -1,52 +1,65 @@
 import sys
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QLabel, QHBoxLayout, QFrame
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
-import win32gui, win32con  # <-- Added Win32 imports for click-through
+import win32gui, win32con
 
 class Communicate(QObject):
-    text_signal = pyqtSignal(str)
+    text_signal = pyqtSignal(str, bool)
 
 class SimpleOverlay(QWidget):
     def __init__(self):
         super().__init__()
-        self.history = []  # Stores recent sentences
+        self.history = []        # Stores locked-in finalized sentences
+        self.active_draft = ""   # Stores the active real-time draft
         self.init_ui()
 
     def init_ui(self):
-        # 1. Added Qt.Tool flag to prevent the window from clogging your taskbar
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint | 
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.Tool
         )
-        # 2. Tell PyQt to allow transparent window backgrounds
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        self.setGeometry(400, 50, 800, 80)
-
-        layout = QVBoxLayout()
-        self.label = QLabel("Listening for speech...", self)
         
-        # 3. Changed background from solid #111111 to semi-transparent RGBA (75% opacity)
-        self.label.setStyleSheet("""
-            font-size: 22px; 
-            color: #00FF00; 
-            background-color: rgba(17, 17, 17, 0.75);
-            padding: 15px;
-            border-radius: 10px;
+        # 780px wide (compact), 62px tall, centered horizontally
+        self.setGeometry(570, 45, 780, 62)
+
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Sleek Glass Container Frame
+        self.container = QFrame(self)
+        self.container.setStyleSheet("""
+            QFrame {
+                background-color: rgba(14, 14, 18, 0.88);
+                border: 1px solid rgba(0, 255, 0, 0.35);
+                border-radius: 12px;
+            }
         """)
-        
-        self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.label.setWordWrap(True)
-        
-        layout.addWidget(self.label)
-        self.setLayout(layout)
 
-        # 4. Safely apply Win32 click-through
+        box_layout = QHBoxLayout(self.container)
+        box_layout.setContentsMargins(22, 0, 22, 0)
+
+        # --- BOLDER, LARGER SINGLE LINE ---
+        self.label = QLabel("Listening for speech...", self.container)
+        self.label.setStyleSheet("""
+            font-size: 24px; 
+            font-weight: 600;
+            color: #00FF00; 
+            background: transparent;
+            border: none;
+            font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+        """)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.label.setWordWrap(False)
+
+        box_layout.addWidget(self.label)
+        main_layout.addWidget(self.container)
+        self.setLayout(main_layout)
+
         self.enable_click_through()
 
     def enable_click_through(self):
-        """Tells Windows to pass all mouse clicks through this window."""
         try:
             hwnd = int(self.winId())
             styles = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
@@ -55,15 +68,50 @@ class SimpleOverlay(QWidget):
         except Exception as e:
             print(f"Warning setting click-through: {e}")
 
-    def update_text(self, text):
+    def update_text(self, text, is_final=False):
         text = text.strip()
         if not text:
             return
 
-        self.history.append(text)
+        if is_final:
+            self.history.append(text)
+            self.active_draft = ""
+            
+            # Keep the history list clean so it doesn't eat RAM
+            if len(self.history) > 5:
+                self.history = self.history[-5:]
+        else:
+            # Word Deduplication between history tail and draft head
+            draft_clean = text
+            if self.history:
+                last_sentence_words = self.history[-1].lower().split()
+                draft_words = text.split()
 
-        total_chars = sum(len(s) for s in self.history)
-        if len(self.history) > 3 or total_chars > 140:
-            self.history = [text]
+                if draft_words and last_sentence_words:
+                    last_word = last_sentence_words[-1].strip(".,!?-")
+                    first_draft_word = draft_words[0].lower().strip(".,!?-")
+                    
+                    if last_word == first_draft_word and len(draft_words) > 1:
+                        draft_clean = " ".join(draft_words[1:])
+            
+            self.active_draft = draft_clean
 
-        self.label.setText(" ".join(self.history))
+        # 1. Combine history + active live draft into one seamless string
+        full_display = " ".join(self.history)
+        if self.active_draft:
+            full_display += (" " if full_display else "") + self.active_draft
+        full_display = full_display.strip()
+
+        # 2. Fill the bar until we hit ~70 characters, then slide the old text off
+        MAX_LINE_CHARS = 70
+        if len(full_display) > MAX_LINE_CHARS:
+            trimmed = full_display[-MAX_LINE_CHARS:]
+            first_space = trimmed.find(" ")
+            if first_space != -1:
+                display_text = "..." + trimmed[first_space:]
+            else:
+                display_text = "..." + trimmed
+        else:
+            display_text = full_display
+
+        self.label.setText(display_text)
