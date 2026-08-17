@@ -26,17 +26,15 @@ from database import get_session_transcript
 
 
 def run_audio(comm, session_id):
-    """Background worker function that captures audio, cleans it, and calls Whisper."""
     stream, audio_queue, p = start_audio_stream()
     print("Live audio stream started...")
-    # --- DB SETUP (Runs once) ---
     init_db()
     
     bucket = []
     silent_chunks_counter = 0
+    chunks_since_last_interim = 0  # <--- Tracks time between live draft passes
     bucket_start_time = None  
     
-    # Global lists to store all 3 benchmark metrics
     global all_pipeline_e2e, all_inference_times, all_response_delays
     all_pipeline_e2e = []
     all_inference_times = []
@@ -45,56 +43,66 @@ def run_audio(comm, session_id):
     try:
         while True:
             try:
-                # Wake up every 0.5s so thread stays responsive
                 raw_data = audio_queue.get(timeout=0.5)
             except Empty:
                 continue
 
-            # 1. Audio Surgery
             clean_chunk = transform_audio(raw_data)
             bucket.append(clean_chunk)
+            chunks_since_last_interim += 1
             
             if len(bucket) == 1:
                 bucket_start_time = time.perf_counter()
 
-            # --- VAD: MEASURE VOLUME & UPDATE SILENCE COUNTER ---
+            # --- VAD: Measure Volume ---
             chunk_volume = np.sqrt(np.mean(clean_chunk**2))
             if chunk_volume < 0.015:
                 silent_chunks_counter += 1
             else:
                 silent_chunks_counter = 0
 
-            # --- VAD DYNAMIC TRIGGER ---
+            # --- TRIGGER 1: FINAL COMMITTED PASS (On Pause or Max Ceiling) ---
             is_pause = (len(bucket) >= 100 and silent_chunks_counter >= 35)
             is_too_long = (len(bucket) >= 400)
 
             if is_pause or is_too_long:
                 full_audio = np.concatenate(bucket)
-                
-                # Calculate silence confirmation wait (~370ms)
                 silence_lag = silent_chunks_counter * 0.01066
                 
-                # --- AI INFERENCE ---
                 ai_start_time = time.perf_counter()
                 text = transcribe_audio(full_audio)
                 inference_time = time.perf_counter() - ai_start_time
                 
-                # --- ACCURATE METRICS (Calculated AFTER inference) ---
                 pipeline_e2e = time.perf_counter() - bucket_start_time
                 response_delay = silence_lag + inference_time
 
                 all_pipeline_e2e.append(pipeline_e2e)
                 all_inference_times.append(inference_time)
                 all_response_delays.append(response_delay)
-                # -----------------------------------------------------
 
                 if text.strip():
-                    print(f"Detected: {text} | Pipeline E2E: {pipeline_e2e:.2f}s | Resp Lag: {response_delay:.2f}s (AI: {inference_time:.2f}s)")
-                    comm.text_signal.emit(text)
+                    print(f"[FINAL] {text} | Pipeline E2E: {pipeline_e2e:.2f}s | Resp Lag: {response_delay:.2f}s")
+                    # 1. EMIT WITH is_final=True (Locks into history!)
+                    comm.text_signal.emit(text, True)
                     log_sentence(session_id, text.strip())
 
+                # Reset everything for the next sentence
                 bucket = []
                 silent_chunks_counter = 0
+                chunks_since_last_interim = 0
+
+            # --- TRIGGER 2: INTERIM DRAFT PASS (While user is actively speaking) ---
+            # Every ~35 chunks (~370ms), if there is active audio in the bucket
+            elif len(bucket) >= 40 and chunks_since_last_interim >= 35 and silent_chunks_counter < 10:
+                full_audio = np.concatenate(bucket)
+                text = transcribe_audio(full_audio)
+
+                if text.strip():
+                    print(f"[DRAFT] {text}")
+                    # 2. EMIT WITH is_final=False (Updates active line without saving to SQL!)
+                    comm.text_signal.emit(text, False)
+
+                chunks_since_last_interim = 0
 
     except Exception as e:
         print(f"Audio worker error: {e}")
@@ -103,7 +111,6 @@ def run_audio(comm, session_id):
         stream.stop_stream()
         stream.close()
         p.terminate()
-
 
 if __name__ == "__main__":
     # 1. Initialize PyQt Application
