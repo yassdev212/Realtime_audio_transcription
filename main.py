@@ -5,7 +5,7 @@ import numpy as np
 from queue import Empty
 import signal
 from PyQt6.QtCore import QTimer
-
+import time
 
 # Disable HuggingFace warning
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -18,7 +18,7 @@ from audio import start_audio_stream, transform_audio
 from engine import transcribe_audio
 from overlay import SimpleOverlay, Communicate
 
-#database
+# Database
 import datetime
 from database import init_db
 from database import log_sentence
@@ -32,11 +32,15 @@ def run_audio(comm, session_id):
     # --- DB SETUP (Runs once) ---
     init_db()
     
-    
-    # ----------------------------
-    
-    last_text = ""
     bucket = []
+    silent_chunks_counter = 0
+    bucket_start_time = None  
+    
+    # Global lists to store all 3 benchmark metrics
+    global all_pipeline_e2e, all_inference_times, all_response_delays
+    all_pipeline_e2e = []
+    all_inference_times = []
+    all_response_delays = []
 
     try:
         while True:
@@ -46,24 +50,51 @@ def run_audio(comm, session_id):
             except Empty:
                 continue
 
-            # 1. Perform Audio Surgery (Stereo -> Mono, 48kHz -> 16kHz, Float32)
+            # 1. Audio Surgery
             clean_chunk = transform_audio(raw_data)
             bucket.append(clean_chunk)
-
             
-            # 2. Process every ~2.0 seconds of audio (200 chunks)
-            if len(bucket) >= 200:
+            if len(bucket) == 1:
+                bucket_start_time = time.perf_counter()
+
+            # --- VAD: MEASURE VOLUME & UPDATE SILENCE COUNTER ---
+            chunk_volume = np.sqrt(np.mean(clean_chunk**2))
+            if chunk_volume < 0.015:
+                silent_chunks_counter += 1
+            else:
+                silent_chunks_counter = 0
+
+            # --- VAD DYNAMIC TRIGGER ---
+            is_pause = (len(bucket) >= 100 and silent_chunks_counter >= 35)
+            is_too_long = (len(bucket) >= 400)
+
+            if is_pause or is_too_long:
                 full_audio = np.concatenate(bucket)
                 
-                # Direct, stateless transcription (No gates, no delays!)
+                # Calculate silence confirmation wait (~370ms)
+                silence_lag = silent_chunks_counter * 0.01066
+                
+                # --- AI INFERENCE ---
+                ai_start_time = time.perf_counter()
                 text = transcribe_audio(full_audio)
+                inference_time = time.perf_counter() - ai_start_time
+                
+                # --- ACCURATE METRICS (Calculated AFTER inference) ---
+                pipeline_e2e = time.perf_counter() - bucket_start_time
+                response_delay = silence_lag + inference_time
+
+                all_pipeline_e2e.append(pipeline_e2e)
+                all_inference_times.append(inference_time)
+                all_response_delays.append(response_delay)
+                # -----------------------------------------------------
 
                 if text.strip():
-                    print(f"Detected: {text}")
+                    print(f"Detected: {text} | Pipeline E2E: {pipeline_e2e:.2f}s | Resp Lag: {response_delay:.2f}s (AI: {inference_time:.2f}s)")
                     comm.text_signal.emit(text)
                     log_sentence(session_id, text.strip())
 
                 bucket = []
+                silent_chunks_counter = 0
 
     except Exception as e:
         print(f"Audio worker error: {e}")
@@ -79,10 +110,8 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     # --- THE WINDOWS CTRL+C FIX (SYSTEMS LEVEL) ---
-    # Catch Ctrl+C and tell the PyQt app to exit cleanly instead of crashing
     signal.signal(signal.SIGINT, lambda *args: app.quit())
 
-    # A tiny 500ms heartbeat timer that forces the C++ loop to yield to Python
     timer = QTimer()
     timer.start(500)
     timer.timeout.connect(lambda: None) 
@@ -102,10 +131,21 @@ if __name__ == "__main__":
     def print_final_transcript():
         print("\nStopping application...")
         full_transcript = get_session_transcript(session_id)
+        
+        # --- CALCULATE ALL 3 BASELINE AVERAGES ---
+        avg_pipeline = sum(all_pipeline_e2e) / len(all_pipeline_e2e) if all_pipeline_e2e else 0
+        avg_response = sum(all_response_delays) / len(all_response_delays) if all_response_delays else 0
+        avg_ai = sum(all_inference_times) / len(all_inference_times) if all_inference_times else 0
+        # -----------------------------------------
+
         print("\n==================================")
         print("      FINAL SESSION TRANSCRIPT     ")
         print("==================================")
         print(full_transcript)
+        print("==================================")
+        print(f"Average Pipeline E2E (First Sound -> Text): {avg_pipeline:.2f} seconds")
+        print(f"Average Perceived Response Lag (End -> Text): {avg_response:.2f} seconds")
+        print(f"Average GPU Inference Time:                 {avg_ai:.2f} seconds")
         print("==================================\n")
 
     app.aboutToQuit.connect(print_final_transcript)
