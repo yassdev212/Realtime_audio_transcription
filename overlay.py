@@ -1,62 +1,63 @@
 import sys
-from PyQt6.QtWidgets import QWidget, QLabel, QHBoxLayout, QFrame
+import win32gui
+import win32con
+from PyQt6.QtWidgets import QWidget, QLabel, QApplication
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
-import win32gui, win32con
+from PyQt6.QtGui import QFont
+
+MAX_WORDS = 14
+PILL_WIDTH = 800
+PILL_HEIGHT = 60
+
 
 class Communicate(QObject):
+    # text: the latest chunk from the backend
+    # is_final: True once this chunk is locked in and won't change again
     text_signal = pyqtSignal(str, bool)
+
 
 class SimpleOverlay(QWidget):
     def __init__(self):
         super().__init__()
-        self.history = []        # Stores locked-in finalized sentences
-        self.active_draft = ""   # Stores the active real-time draft
+        self.history_words = []   # locked-in words, bright
+        self.draft_words = []     # interim words, dimmed, replaced each update
         self.init_ui()
 
     def init_ui(self):
         self.setWindowFlags(
-            Qt.WindowType.WindowStaysOnTopHint | 
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        
-        # 780px wide (compact), 62px tall, centered horizontally
-        self.setGeometry(570, 45, 780, 62)
 
-        main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - PILL_WIDTH) // 2
+        self.setGeometry(x, 40, PILL_WIDTH, PILL_HEIGHT)
 
-        # Sleek Glass Container Frame
-        self.container = QFrame(self)
-        self.container.setStyleSheet("""
-            QFrame {
-                background-color: rgba(14, 14, 18, 0.88);
-                border: 1px solid rgba(0, 255, 0, 0.35);
-                border-radius: 12px;
-            }
-        """)
-
-        box_layout = QHBoxLayout(self.container)
-        box_layout.setContentsMargins(22, 0, 22, 0)
-
-        # --- BOLDER, LARGER SINGLE LINE ---
-        self.label = QLabel("Listening for speech...", self.container)
-        self.label.setStyleSheet("""
-            font-size: 24px; 
-            font-weight: 600;
-            color: #00FF00; 
-            background: transparent;
-            border: none;
-            font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
-        """)
+        self.label = QLabel(self)
+        self.label.setGeometry(0, 0, PILL_WIDTH, PILL_HEIGHT)
         self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.label.setWordWrap(False)
+        self.label.setTextFormat(Qt.TextFormat.RichText)
 
-        box_layout.addWidget(self.label)
-        main_layout.addWidget(self.container)
-        self.setLayout(main_layout)
+        font = QFont()
+        font.setFamilies(["Segoe UI Variable", "Segoe UI", "-apple-system"])
+        font.setPointSize(14)
+        self.label.setFont(font)
 
+        # The pill itself: frosted dark glass, thin white rim light, fully rounded ends.
+        self.label.setStyleSheet(f"""
+            QLabel {{
+                background-color: rgba(20, 20, 22, 180);
+                border: 1px solid rgba(255, 255, 255, 40);
+                border-radius: {PILL_HEIGHT // 2}px;
+                padding-left: 24px;
+                padding-right: 24px;
+            }}
+        """)
+
+        self.label.setText(self._render_html(["Listening..."], []))
         self.enable_click_through()
 
     def enable_click_through(self):
@@ -73,45 +74,50 @@ class SimpleOverlay(QWidget):
         if not text:
             return
 
+        words = text.split()
+
         if is_final:
-            self.history.append(text)
-            self.active_draft = ""
-            
-            # Keep the history list clean so it doesn't eat RAM
-            if len(self.history) > 5:
-                self.history = self.history[-5:]
+            # Dedup: if the draft's first word already matches history's last word
+            # (a boundary word that showed up in both an interim pass and the
+            # final pass), drop the duplicate so it doesn't stutter on screen.
+            if self.history_words and words and words[0] == self.history_words[-1]:
+                words = words[1:]
+            self.history_words.extend(words)
+            self.draft_words = []
         else:
-            # Word Deduplication between history tail and draft head
-            draft_clean = text
-            if self.history:
-                last_sentence_words = self.history[-1].lower().split()
-                draft_words = text.split()
+            # Interim text always fully replaces the previous draft, it's a
+            # revised guess, not an addition.
+            self.draft_words = words
 
-                if draft_words and last_sentence_words:
-                    last_word = last_sentence_words[-1].strip(".,!?-")
-                    first_draft_word = draft_words[0].lower().strip(".,!?-")
-                    
-                    if last_word == first_draft_word and len(draft_words) > 1:
-                        draft_clean = " ".join(draft_words[1:])
-            
-            self.active_draft = draft_clean
-
-        # 1. Combine history + active live draft into one seamless string
-        full_display = " ".join(self.history)
-        if self.active_draft:
-            full_display += (" " if full_display else "") + self.active_draft
-        full_display = full_display.strip()
-
-        # 2. Fill the bar until we hit ~70 characters, then slide the old text off
-        MAX_LINE_CHARS = 70
-        if len(full_display) > MAX_LINE_CHARS:
-            trimmed = full_display[-MAX_LINE_CHARS:]
-            first_space = trimmed.find(" ")
-            if first_space != -1:
-                display_text = "..." + trimmed[first_space:]
+        # Rolling viewport: keep only the last MAX_WORDS across history+draft combined.
+        combined_len = len(self.history_words) + len(self.draft_words)
+        if combined_len > MAX_WORDS:
+            overflow = combined_len - MAX_WORDS
+            if overflow <= len(self.history_words):
+                display_history = self.history_words[overflow:]
+                prefix = "... "
             else:
-                display_text = "..." + trimmed
+                display_history = []
+                remaining_draft_trim = overflow - len(self.history_words)
+                self.draft_words = self.draft_words[remaining_draft_trim:]
+                prefix = "... "
         else:
-            display_text = full_display
+            display_history = self.history_words
+            prefix = ""
 
-        self.label.setText(display_text)
+        self.label.setText(self._render_html(display_history, self.draft_words, prefix))
+
+    def _render_html(self, history_words, draft_words, prefix=""):
+        history_html = " ".join(history_words)
+        draft_html = " ".join(draft_words)
+
+        parts = []
+        if prefix:
+            parts.append(f'<span style="color: rgba(255,255,255,0.35);">{prefix}</span>')
+        if history_html:
+            parts.append(f'<span style="color: #FFFFFF;">{history_html}</span>')
+        if draft_html:
+            separator = " " if history_html else ""
+            parts.append(f'<span style="color: rgba(255,255,255,0.5);">{separator}{draft_html}</span>')
+
+        return "".join(parts) if parts else '<span style="color: rgba(255,255,255,0.5);">Listening...</span>'
