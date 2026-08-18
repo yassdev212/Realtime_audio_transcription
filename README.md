@@ -2,7 +2,7 @@
 
 A real-time, GPU-accelerated desktop overlay that transcribes system audio instantly and logs meetings to a local database. Built entirely in Python, this tool operates 100% locally for maximum privacy—no cloud APIs, no subscriptions, and no data leaving your machine.
 
-![HUD Demo](assets/demo.png)
+![HUD Demo](assets/demo2.png)
 
 ## Features
 
