@@ -6,11 +6,21 @@ System Overview
 
 Captures live Windows system audio via WASAPI loopback, buffers it into chunks, runs it through a local Whisper model on GPU, and displays the result in a transparent always-on-top overlay. Transcripts are logged to SQLite per session.
 
-Windows Speakers -> WASAPI Loopback -> Thread-safe Queue -> DSP (resample/downmix)
-                                                                    |
-                                                          Faster-Whisper (CUDA)
-                                                                    |
-                                                    PyQt6 Overlay + SQLite Log
+
+[Windows Speakers] ──> (WASAPI Loopback) ──> [Thread-safe Queue] ──> [DSP (resample/downmix)]
+                                                                           │
+                                                                 [Dual-Layer VAD Pipeline]
+                                                                           │
+                                                                 [Faster-Whisper (CUDA)]
+                                                                           │
+                                                                 [PyQt6 Overlay + SQLite Log]
+                                                                           │
+                                                            (On Exit / Ctrl+C)
+                                                                           ▼
+                                                                 [Groq LLM Summarizer]
+                                                                           │
+                                                            [summaries/summary_XYZ.md]
+
 
 Audio arrives in 512-frame chunks at 48kHz (~10.66ms each) and is accumulated into a "bucket" before inference, since transcribing every 10ms chunk individually would give the model no usable context.
 
@@ -71,4 +81,7 @@ Note: the 2026-08-01 and 2026-08-17 numbers were measured on different environme
 
 Open Questions / Next Steps
 
-- [ ] **Explore Overlapping Bucket Windows (Future V3.0 Roadmap):** Investigate re-decoding the trailing 300ms of the previous bucket with string-alignment deduplication to further reduce boundary truncation on rapid continuous speech.
+
+- [x] **Automated Meeting Summarization (Resolved):** Integrated Groq API to automatically compile structured markdown reports on session completion with output saved to `summaries/`.
+- [x] **UI Auto-Clear Timer (Resolved):** Implemented 5s silence watchdog in `overlay.py` to reset the HUD during inactive periods.
+- [ ] **Local Semantic Search Tool (v3.5 Roadmap):** Build a standalone CLI search engine (`search.py`) using local vector embeddings (`sentence-transformers` + `chromadb`) to query past transcripts without sending data to cloud APIs.
