@@ -2,3 +2,5 @@ audio_transcriptionenv/
 __pycache__/
 *.pyc
 transcripts.db
+.env
+summaries

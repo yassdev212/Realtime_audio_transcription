@@ -3,3 +3,5 @@ faster-whisper
 PyAudioWPatch
 PyQt6
 pywin32
+groq
+python-dotenv
