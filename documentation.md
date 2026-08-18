@@ -84,4 +84,4 @@ Open Questions / Next Steps
 
 - [x] **Automated Meeting Summarization (Resolved):** Integrated Groq API to automatically compile structured markdown reports on session completion with output saved to `summaries/`.
 - [x] **UI Auto-Clear Timer (Resolved):** Implemented 5s silence watchdog in `overlay.py` to reset the HUD during inactive periods.
-- [ ] **Local Semantic Search Tool (v3.5 Roadmap):** Build a standalone CLI search engine (`search.py`) using local vector embeddings (`sentence-transformers` + `chromadb`) to query past transcripts without sending data to cloud APIs.
+- [ ] **Local Semantic Search Tool (v3.0 Roadmap):** Build a standalone CLI search engine (`search.py`) using local vector embeddings (`sentence-transformers` + `chromadb`) to query past transcripts without sending data to cloud APIs.
