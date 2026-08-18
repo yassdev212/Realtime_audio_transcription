@@ -39,5 +39,22 @@ def get_session_transcript(session_id):
     conn.close()
     sentences = [row[0] for row in rows]
     return " ".join(sentences)
-    
+
+def get_latest_session_id():
+    """Returns the most recent session_id stored in the database."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT session_id FROM transcripts ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def get_all_sessions():
+    """Returns a list of all unique session_ids in chronological order."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT session_id FROM transcripts ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
 

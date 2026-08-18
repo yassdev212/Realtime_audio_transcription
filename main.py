@@ -6,7 +6,7 @@ from queue import Empty
 import signal
 from PyQt6.QtCore import QTimer
 import time
-
+from summarizer import generate_summary
 # Disable HuggingFace warning
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
@@ -138,6 +138,8 @@ if __name__ == "__main__":
     def print_final_transcript():
         print("\nStopping application...")
         full_transcript = get_session_transcript(session_id)
+        # Generates and saves summary_<session_id>.md silently to disk!
+        generate_summary(session_id)
         
         # --- CALCULATE ALL 3 BASELINE AVERAGES ---
         avg_pipeline = sum(all_pipeline_e2e) / len(all_pipeline_e2e) if all_pipeline_e2e else 0
