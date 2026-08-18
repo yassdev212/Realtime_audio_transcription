@@ -1,24 +1,4 @@
-Why did we use Groq, and can it be swapped for any API?
-
-We used Groq because its free tier provides high token throughput (~500–1000
-tokens/sec on LPUs) without requiring a credit card.
-
-However, it is not locked to Groq. Almost the entire AI industry—including
-OpenAI, Groq, Together AI, DeepSeek, and even local tools like Ollama and
-vLLM—uses the exact same OpenAI API format (client.chat.completions.create).
-
-If you ever want to swap Groq out for a local Ollama instance or OpenAI, you
-just change the base_url in two lines of Python. The rest of summarizer.py stays
-identical.
-
-The Updated README.md (v3.0)
-
-Here is your updated README.md. It documents the automated meeting summarizer,
-the summaries/ directory, standalone CLI usage, and includes step-by-step
-instructions on setting up their own API key in .env (while making it clear the
-core HUD is still 100% local without it).
-
-# Real-Time WASAPI Transcription HUD (v3.0)
+# Real-Time WASAPI Transcription HUD (v2.7)
 
 A real-time, GPU-accelerated desktop overlay that transcribes system audio instantly, logs meetings to a local SQLite database, and automatically generates structured AI meeting summaries. Built in Python, the core transcription engine operates 100% locally for maximum privacy—no cloud APIs, no subscriptions, and no audio leaving your machine.
 
