@@ -81,7 +81,7 @@ def run_audio(comm, session_id):
                 all_response_delays.append(response_delay)
 
                 if text.strip():
-                    print(f"[FINAL] {text} | Pipeline E2E: {pipeline_e2e:.2f}s | Resp Lag: {response_delay:.2f}s")
+
                     # 1. EMIT WITH is_final=True (Locks into history!)
                     comm.text_signal.emit(text, True)
                     log_sentence(session_id, text.strip())
@@ -98,7 +98,7 @@ def run_audio(comm, session_id):
                 text = transcribe_audio(full_audio)
 
                 if text.strip():
-                    print(f"[DRAFT] {text}")
+                    
                     # 2. EMIT WITH is_final=False (Updates active line without saving to SQL!)
                     comm.text_signal.emit(text, False)
 

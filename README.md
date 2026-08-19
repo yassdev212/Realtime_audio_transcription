@@ -69,7 +69,7 @@ pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
 
 4. Configure an API key (optional, for summaries and full RAG):
 
-The core HUD, audio capture, local transcription, and semantic search are **100% offline and require no API key.**
+The core capture, transcription, storage, and semantic search pipeline runs entirely locally. AI summaries and RAG synthesis optionally use Groq.
 
 To enable meeting summaries and RAG synthesis, create a `.env` file in the project root:
 
