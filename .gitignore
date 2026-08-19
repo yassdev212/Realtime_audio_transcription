@@ -4,3 +4,4 @@ __pycache__/
 transcripts.db
 .env
 summaries
+chroma_db/

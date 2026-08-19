@@ -46,7 +46,7 @@ Reran the original benchmark suite two weeks later with no code changes, getting
 1. Suspected GPU fallback.
 2. Restarted machine (inference dropped to 1.42s, but E2E latency rose to 3.21s, pointing to stacked issues).
 3. Isolated model call in a standalone script.
-4. Found root cause: model had drifted to small.en on int8/CUDA, and CTranslate2 silently fell back to a slower compute path due to flushed JIT shader caches. Switching to base.en dropped inference to 0.47s.
+4. Found fix:Switching to base.en instead dropped inference to 0.47s.
 
 Side finding: Switching from beam_size=1 to beam_size=5 made WER worse (41.0% -> 53.0%). Greedy decoding on a boundary-cut fragment produces an obvious wrong guess; beam search optimizes for fluency and "completes" the fragment into something smooth but wrong (same failure mode as context prompting).
 
