@@ -1,4 +1,4 @@
-# Engineering Notes: Real-Time Audio Transcription HUD
+# Technical Deep Dive: Real-Time Audio Transcription HUD
 
 This document tracks the design decisions, failed experiments, and benchmark data behind this project — what was tried, what broke, and why.
 

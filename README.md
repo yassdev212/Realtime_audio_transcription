@@ -40,7 +40,7 @@ Local, real-time meeting transcription with semantic search and AI summaries. GP
                               [summaries/summary.md]
 ```
 
-For the engineering rationale, benchmark history, and failed approaches behind these decisions, see [documentation.md](documentation.md).
+For the full Technical Deep Dive and benchmark history see [documentation.md](documentation.md).
 
 ## Installation
 
