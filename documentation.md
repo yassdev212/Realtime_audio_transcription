@@ -24,8 +24,9 @@ Captures live Windows system audio via WASAPI loopback, buffers it into chunks, 
                                [summaries/summary_XYZ.md]                                  (Optional: RAG with LLM)
 ```
 
-Audio arrives in 512-frame chunks at 48kHz (~10.66ms each) and is accumulated into a "bucket" before inference, since transcribing every 10ms chunk individually gives the model no usable context.
+Audio arrives from the WASAPI driver in 512-frame chunks as 48kHz stereo 16-bit PCM bytes (~10.66ms each). Before buffering, each chunk undergoes a real-time NumPy transformation pipeline: it is downmixed from stereo to mono via array slicing ([::2]), resampled from 48kHz to 16kHz ([::3]), and normalized into the -1.0 to 1.0 float32 tensors required by the AI model.
 
+These cleaned chunks are accumulated into a "bucket" before inference, since transcribing every 10ms chunk individually gives the model no usable context.
 ## Early Experiments
 
 **Rolling context prompting** — passed the previous sentence back into Whisper as an `initial_prompt` for grammatical memory across buckets. Helped at 6s buckets (34.15% -> 31.71% WER) but hurt badly at 1.5s buckets (46.34% -> 51.22%). Cause: fixed-timer cuts routinely slice words in half ("Privet" -> "Priv-" / "-vet"), and feeding that fragment back as a prompt made the model force a grammatically plausible bridge instead of discarding the garbage — producing stuttering and repetition. Memory made it more confidently wrong, not less.
