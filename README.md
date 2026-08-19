@@ -1,20 +1,20 @@
-# Real-Time WASAPI Transcription HUD (v2.7)
+# Real-Time WASAPI Transcription HUD (v3.0)
 
-A real-time, GPU-accelerated desktop overlay that transcribes Windows system audio and logs meetings to a local SQLite database, with optional AI-generated meeting summaries. The core transcription engine runs 100% locally on GPU—no audio leaves your machine.
+Local, real-time meeting transcription with semantic search and AI summaries. GPU-accelerated, no cloud APIs required for the core pipeline.
 
 ![HUD Demo](assets/demo2.png)
 
 ## Features
 
-- **System Audio Capture:** Captures loopback speaker audio directly using Windows WASAPI drivers (`PyAudioWPatch`).
-- **Real-Time Audio Processing:** Uses NumPy array slicing to downmix stereo channels to mono, resample 48kHz to 16kHz, and normalize 16-bit PCM bytes to float32 tensors.
-- **Dual-Layer Voice Activity Detection:** A custom Python RMS energy counter detects speech pauses (~370ms) to flush audio dynamically without slicing words in half, while `faster-whisper`'s built-in Silero filter (`vad_filter=True`) strips residual static before inference.
-- **GPU-Accelerated Inference:** Runs local `faster-whisper` (CTranslate2) on NVIDIA CUDA (`base.en` int8).
-- **Two-Tone Real-Time Streaming:** Live draft words stream to the overlay in real-time, locking in as solid white once speech pauses are confirmed.
-- **Persistent SQLite Logging:** Automatically stores transcripts in `transcripts.db`, grouped by unique, timestamped session IDs.
-- **Automated Post-Meeting Summaries (Optional):** On exit (`Ctrl+C`), compiles the session transcript and calls an LLM API (Groq) to generate an executive report saved to the `summaries/` directory.
-- **Standalone Summarizer CLI:** Run `summarizer.py` to inspect past sessions (`--list`) or generate summaries for any previous session ID on demand.
-- **Transparent Click-Through UI:** A borderless, semi-transparent PyQt6 desktop overlay using Win32 API flags (`WS_EX_TRANSPARENT | WS_EX_LAYERED`) so mouse clicks pass directly through to background applications, with a 5-second auto-clear timer on silence.
+- **System Audio Capture:** Captures loopback speaker audio directly via Windows WASAPI drivers (`PyAudioWPatch`).
+- **Audio Preprocessing:** NumPy pipeline downmixes stereo to mono, resamples 48kHz to 16kHz, and normalizes 16-bit PCM to float32.
+- **Dual-Layer Voice Activity Detection:** A custom RMS energy gate detects speech pauses (~370ms) to flush audio dynamically without slicing words in half, while `faster-whisper`'s built-in Silero filter strips residual noise before inference.
+- **GPU-Accelerated Inference:** Runs `faster-whisper` (CTranslate2) locally on NVIDIA CUDA (`base.en`, int8).
+- **Live Two-Tone Streaming:** Draft words stream to the overlay as you speak, locking in as solid white once a pause confirms the sentence is final.
+- **Dual-Write Logging:** Finalized transcripts are stored in `transcripts.db` (SQLite) for chronological logs and embedded into `chroma_db` (ChromaDB) for semantic search.
+- **Local Semantic Search & RAG:** Query past meetings offline via `sentence-transformers`, with an optional RAG mode to synthesize answers.
+- **Automated Meeting Summaries (Optional):** On exit, compiles the session transcript and calls an LLM API (Groq) to generate an executive report in `summaries/`.
+- **Transparent Click-Through UI:** A borderless, semi-transparent PyQt6 overlay using Win32 API flags so mouse clicks pass through to background apps, with a 5-second auto-clear on silence.
 
 ## System Architecture
 
@@ -29,16 +29,18 @@ A real-time, GPU-accelerated desktop overlay that transcribes Windows system aud
                                                   │
                                       [Faster-Whisper on CUDA]
                                                   │
-                                        (Save to SQLite DB)
-                                                  │
-                                           (On Exit / Ctrl+C)
-                                                  ▼
-                                         [LLM Summarizer API]
-                                                  │
-                                      [summaries/summary_XYZ.md]
+                                          (Dual-Write DBs)
+                                          ┌───────┴───────┐
+                                      [SQLite]       [ChromaDB]
+                                          │               │
+                                  (On Exit/Ctrl+C)   (search.py)
+                                          ▼               ▼
+                                 [LLM Summarizer]  [Local RAG Engine]
+                                          │
+                              [summaries/summary.md]
 ```
 
-For the full engineering rationale, benchmark comparisons, and failure analysis, see [documentation.md](documentation.md).
+For the engineering rationale, benchmark history, and failed approaches behind these decisions, see [documentation.md](documentation.md).
 
 ## Installation
 
@@ -63,54 +65,48 @@ pip install -r requirements.txt
 pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
 ```
 
-*(Note: On Windows, make sure the installed DLL directories are added to your Python path or placed in the CTranslate2 directory. See `engine.py` for implementation).*
+*(On Windows, the installed DLL directories may need to be added to your Python path or placed in the CTranslate2 directory — see `engine.py`.)*
 
-4. Configure your API key (Optional for Summaries):
+4. Configure an API key (optional, for summaries and full RAG):
 
-The core HUD, audio capture, and local transcription are **100% offline and require no API key**.
+The core HUD, audio capture, local transcription, and semantic search are **100% offline and require no API key.**
 
-To enable automated meeting summaries on exit, create a `.env` file in the project root and add an API key (e.g., from [Groq Console](https://console.groq.com/)):
+To enable meeting summaries and RAG synthesis, create a `.env` file in the project root:
 
 ```env
 GROQ_API_KEY=gsk_your_api_key_here
 ```
 
-*(If no key is configured, the program will simply export the full raw database transcript upon exit without crashing).*
+*(Without a key, the app still exports the full raw transcript on exit and runs plain semantic search — nothing breaks.)*
 
 ## Usage
 
-### 1. Running the Live HUD
-
-Run the main script. Audio will automatically stream as text at the top of your screen:
-
+### Running the live HUD
 ```bash
 python main.py
 ```
+Press `Ctrl+C` to exit. This shuts down cleanly, queries SQLite for the session, and saves an AI summary to `summaries/summary_<session_id>.md`.
 
-To stop, focus the terminal and press `Ctrl+C`. The application will shut down cleanly, query SQLite for the current session, and save an AI summary to `summaries/summary_<session_id>.md`.
-
-### 2. Standalone Summarizer CLI
-
-You can inspect and summarize any past meeting from the database at any time:
-
+### Standalone summarizer CLI
 ```bash
-# List all past sessions stored in SQLite
-python summarizer.py --list
+python summarizer.py --list                 # list all past sessions
+python summarizer.py                        # summarize the most recent session
+python summarizer.py Session_20260818_1430  # summarize a specific session
+```
 
-# Summarize the most recent session
-python summarizer.py
-
-# Summarize a specific session ID
-python summarizer.py Session_20260818_143000
+### Local semantic search CLI
+```bash
+python search.py "meeting verdict"          # pure local semantic search
+python search.py --ask "What was decided?"  # full RAG: search + LLM synthesis
 ```
 
 ## Roadmap
 
-- [x] **V1.0:** Core Audio-to-Text HUD Pipeline
+- [x] **V1.0:** Core audio-to-text HUD pipeline
 - [x] **V2.0:** SQLite persistent session logging and native exit exporter
 - [x] **V2.5:** Dual-layer VAD (energy gate + neural Silero filter) — WER 26.83%, inference ~0.32s, perceived lag ~0.56s
-- [x] **V2.7:** Automated meeting summaries via LLM API, standalone CLI, live two-tone interim streaming, and 5s UI auto-clear
-- [ ] **V3.0:** Standalone local semantic search engine (`search.py`) using local vector embeddings (`sentence-transformers` + `chromadb`) to query past transcripts offline
+- [x] **V2.7:** Automated meeting summaries via LLM API, standalone CLI, live two-tone interim streaming, 5s UI auto-clear
+- [x] **V3.0:** Local semantic search (`search.py`) with `sentence-transformers` + `chromadb`, and optional RAG synthesis
 
 ## License
 
