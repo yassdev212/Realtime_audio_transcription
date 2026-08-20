@@ -3,16 +3,20 @@
 import jiwer
 
 # 1. Paste the exact human transcript of the speech
-ground_truth = ( '''Mr. and Mrs. Dursley live at number 4, Privet
-Drive. They are a perfectly normal family. They
-do not like anything that is different or strange,
-and they hate mysterious things most of all.
-They prefer a life that is calm, ordinary and
-without any surprises.''')
+ground_truth = ( '''The birch canoe slid on the smooth planks.
+Glue the sheet to the dark blue background.
+It's easy to tell the depth of a well.
+These days a chicken leg is a rare dish.
+Rice is often served in round bowls.
+The juice of lemons make fine punch.
+The box was thrown beside the parked truck.
+The hogs were fed corn and garbage.
+Four hours of steady work faced us.
+A large size in stockings is hard to sell.''')
 
 # 2. Paste your captured outputs
-old_output = ""  
-new_output = ""  
+output = "he Burke Canoe slid on the smooth. 2 planks. Glue the sheet to the dark background. It's easy to tell the depth of a well. These days a chicken leg is A bear dish. Rice is often served in round bowl. The juice of lemons make fine. A The box was thrown beside the parked truck. The hogs were fed corn and Garbage. Four hours of steady work faced us. A large size in stockings is hard to sell."  
+ 
 
 
 transformation = jiwer.Compose([
@@ -24,16 +28,14 @@ transformation = jiwer.Compose([
 
 # Normalize your texts
 clean_truth = transformation(ground_truth)
-clean_old = transformation(old_output)
-clean_new = transformation(new_output)
+clean_output = transformation(output)
+
 
 # 3. Calculate WER
-wer_old = jiwer.wer(clean_truth, clean_old)
-wer_new = jiwer.wer(clean_truth, clean_new)
-
-print(f"Old WER: {wer_old * 100:.2f}%")
-print(f"New WER: {wer_new * 100:.2f}%")
+wer = jiwer.wer(clean_truth, clean_output)
 
 
-improvement = ((wer_old - wer_new) / wer_old) * 100
-print(f"Accuracy Improvement: {improvement:.2f}%")
+print(f"WER: {wer * 100:.2f}%")
+
+
+
